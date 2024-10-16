@@ -5,3 +5,5 @@
 ```shell
 $ make
 ```
+
+![alt text](image.png)
