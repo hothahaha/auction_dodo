@@ -174,7 +174,7 @@ contract PublicAuctionTest is Test {
         vm.deal(address(this), bidAmount);
         auction.bid{value: bidAmount}();
 
-        assertEq(auction.highestBid(), bidAmount);
+        assertEq(auction.highestBid(), (bidAmount * 120) / 100);
         assertEq(auction.highestBidder(), address(this));
     }
 

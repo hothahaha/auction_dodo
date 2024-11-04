@@ -4,40 +4,51 @@ pragma solidity ^0.8.17;
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+/// @title Public Auction Contract
+/// @notice Implements a public auction with time-weighted bidding and extension mechanisms
 contract PublicAuction is ReentrancyGuard, Ownable {
+    // Custom Errors
+    error PublicAuction__AuctionAlreadyEnded();
+    error PublicAuction__BidNotHighEnough(uint256 highestBid);
+    error PublicAuction__BiddingCooldownNotExpired();
+    error PublicAuction__AuctionNotYetEnded();
+    error PublicAuction__AuctionEndAlreadyCalled();
+    error PublicAuction__TransferFailed();
+
+    // Structs
     struct Bid {
         address bidder;
         uint256 amount;
         uint256 timestamp;
     }
 
+    // State Variables
     uint256 public auctionEndTime;
     uint256 public highestBid;
     address public highestBidder;
     mapping(address => uint256) public pendingReturns;
     bool public ended;
 
-    // 出价冷却时间
     uint256 public constant COOL_DOWN_PERIOD = 5 minutes;
-    // 时间加权出价奖励触发（距离结束拍卖的剩余时间）
     uint256 public constant TIME_WEIGHT_PERIOD = 5 minutes;
-    // 时间加权出价奖励机制
     uint256 public constant TIME_WEIGHT_MULTIPLIER = 120; // 1.2x
-    // 拍卖终局延长时间
     uint256 public constant AUCTION_EXTENSION_PERIOD = 5 minutes;
 
     mapping(address => uint256) public lastBidTime;
-
     Bid[] public bids;
 
+    // Events
     event HighestBidIncreased(address bidder, uint256 amount);
     event AuctionEnded(address winner, uint256 amount);
     event AuctionExtended(uint256 newEndTime);
 
+    /// @notice Creates a new auction with the specified bidding time
+    /// @param _biddingTime Duration of the auction in seconds
     constructor(uint256 _biddingTime) Ownable(msg.sender) {
         auctionEndTime = block.timestamp + _biddingTime;
     }
 
+    /// @notice Place a bid on the auction
     function bid() public payable nonReentrant {
         if (block.timestamp > auctionEndTime)
             revert PublicAuction__AuctionAlreadyEnded();
@@ -58,21 +69,21 @@ contract PublicAuction is ReentrancyGuard, Ownable {
         }
 
         highestBidder = msg.sender;
-        highestBid = msg.value;
-        // 用于计算出价冷却时间
+        highestBid = weightedBid;
         lastBidTime[msg.sender] = block.timestamp;
 
-        bids.push(Bid(msg.sender, msg.value, block.timestamp));
+        bids.push(Bid(msg.sender, weightedBid, block.timestamp));
 
-        emit HighestBidIncreased(msg.sender, msg.value);
+        emit HighestBidIncreased(msg.sender, weightedBid);
 
-        // 如果距离拍卖结束时间小于AUCTION_EXTENSION_PERIOD，则延长拍卖时间
         if (block.timestamp > auctionEndTime - AUCTION_EXTENSION_PERIOD) {
             auctionEndTime = block.timestamp + AUCTION_EXTENSION_PERIOD;
             emit AuctionExtended(auctionEndTime);
         }
     }
 
+    /// @notice Withdraw a previous bid that was overbid
+    /// @return success Whether the withdrawal was successful
     function withdraw() public nonReentrant returns (bool) {
         uint256 amount = pendingReturns[msg.sender];
         if (amount > 0) {
@@ -86,6 +97,7 @@ contract PublicAuction is ReentrancyGuard, Ownable {
         return true;
     }
 
+    /// @notice End the auction and send the highest bid to the owner
     function auctionEnd() public nonReentrant {
         if (block.timestamp < auctionEndTime)
             revert PublicAuction__AuctionNotYetEnded();
@@ -98,6 +110,7 @@ contract PublicAuction is ReentrancyGuard, Ownable {
         if (!success) revert PublicAuction__TransferFailed();
     }
 
+    // View/Pure Functions
     function getHighestBid() public view returns (uint256) {
         return highestBid;
     }
@@ -113,11 +126,4 @@ contract PublicAuction is ReentrancyGuard, Ownable {
     function getCoolDownPeriod() public pure returns (uint256) {
         return COOL_DOWN_PERIOD;
     }
-
-    error PublicAuction__AuctionAlreadyEnded();
-    error PublicAuction__BidNotHighEnough(uint256 highestBid);
-    error PublicAuction__BiddingCooldownNotExpired();
-    error PublicAuction__AuctionNotYetEnded();
-    error PublicAuction__AuctionEndAlreadyCalled();
-    error PublicAuction__TransferFailed();
 }
